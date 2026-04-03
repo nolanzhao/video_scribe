@@ -18,20 +18,23 @@
 
 前往 [Releases](https://github.com/nolanzhao/video_scribe/releases) 下载最新版本的 `.dmg` 文件（仅支持 Apple Silicon Mac）。
 
-> 首次打开时 macOS 可能提示"无法验证开发者"，请右键点击应用 → 打开 → 确认打开。
-
+> **遇到了“应用已损坏，无法打开”？**
+> 这是因为 macOS 最新的 Gatekeeper 机制拦截了未经过 Apple 开发者签名的第三方开源应用。
+> **解决方法：**
+> 1. 将应用拖入 `应用程序 (Applications)` 文件夹。
+> 2. 打开终端 (Terminal)，执行以下一键解除隔离命令（注意后面的空格和路径）：
+>    ```bash
+>    sudo xattr -r -d com.apple.quarantine /Applications/VideoScribe.app
+>    ```
+> 3. 输入开机密码后，即可正常打开。
 ### 系统要求
 
-- macOS 14.0+（Apple Silicon）
-- [FFmpeg](https://ffmpeg.org/)（音频提取需要）
+- macOS 14.0+（Apple Silicon M1/M2/M3 等）
 
-```bash
-brew install ffmpeg
-```
+### 环境依赖 & 模型
 
-### 语音模型
-
-首次启动时会自动下载 Whisper Large V3 Turbo 模型（约 1.5 GB），下载后存储在 `~/Library/Application Support/com.videoscribe.app/`，之后无需重复下载。
+**开箱即用，无需配置：** 
+首次启动时应用会自动静默下载所需的 **Whisper 语音模型** (约 1.5GB) 与 **FFmpeg 音视频处理组件**，下载后存储在 `~/Library/Application Support/com.videoscribe.app/`，之后无需重复下载。
 
 ## 从源码构建
 

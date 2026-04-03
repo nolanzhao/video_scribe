@@ -1,10 +1,21 @@
 use std::path::Path;
 use std::process::Command;
 
+/// Helper to get the correct ffmpeg command.
+fn get_ffmpeg_path() -> String {
+    let local = crate::model_manager::local_ffmpeg_path();
+    if local.exists() {
+        local.to_string_lossy().to_string()
+    } else {
+        "ffmpeg".to_string()
+    }
+}
+
 /// Extract audio from a video file to a WAV file (16kHz, mono, 16-bit PCM).
 /// This is the format whisper.cpp expects.
 pub fn extract_audio(video_path: &str, output_path: &str) -> Result<(), String> {
-    let output = Command::new("ffmpeg")
+    let ffmpeg_cmd = get_ffmpeg_path();
+    let output = Command::new(&ffmpeg_cmd)
         .args([
             "-y",
             "-i",
@@ -20,7 +31,7 @@ pub fn extract_audio(video_path: &str, output_path: &str) -> Result<(), String> 
         ])
         .output()
         .map_err(|e| {
-            format!("FFmpeg not found: {e}. Please install via: brew install ffmpeg")
+            format!("FFmpeg not found: {e}. Command was: {ffmpeg_cmd}")
         })?;
 
     if output.status.success() {
@@ -62,34 +73,43 @@ pub fn load_wav_as_f32(wav_path: &str) -> Result<Vec<f32>, String> {
     Ok(samples)
 }
 
-/// Get video duration in seconds using ffprobe.
+/// Get video duration in seconds using ffmpeg directly (so we don't need ffprobe).
 pub fn get_video_duration(video_path: &str) -> Result<f64, String> {
-    let output = Command::new("ffprobe")
-        .args([
-            "-v",
-            "quiet",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            video_path,
-        ])
+    let output = Command::new(get_ffmpeg_path())
+        .arg("-i")
+        .arg(video_path)
         .output()
-        .map_err(|e| format!("ffprobe failed: {e}"))?;
+        .map_err(|e| format!("ffmpeg failed: {e}"))?;
 
-    if !output.status.success() {
-        return Err("ffprobe failed to get duration".to_string());
+    // ffmpeg -i typically exits with code 1 when no output file is provided, which is fine here.
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    
+    // Parse "  Duration: 00:03:45.12,"
+    if let Some(duration_idx) = stderr.find("Duration: ") {
+        let dur_str = &stderr[duration_idx + 10..];
+        if let Some(comma_idx) = dur_str.find(',') {
+            let time_str = dur_str[..comma_idx].trim();
+            // time_str represents HH:MM:SS.ms
+            let parts: Vec<&str> = time_str.split(':').collect();
+            if parts.len() == 3 {
+                let h: f64 = parts[0].parse().unwrap_or(0.0);
+                let m: f64 = parts[1].parse().unwrap_or(0.0);
+                let s: f64 = parts[2].parse().unwrap_or(0.0);
+                return Ok(h * 3600.0 + m * 60.0 + s);
+            }
+        }
     }
 
-    let duration_str = String::from_utf8_lossy(&output.stdout);
-    duration_str
-        .trim()
-        .parse::<f64>()
-        .map_err(|e| format!("Failed to parse duration: {e}"))
+    Err("Failed to parse duration from ffmpeg".to_string())
 }
 
-/// Check if FFmpeg is available.
+/// Check if FFmpeg is available (either local or system).
 pub fn is_ffmpeg_available() -> bool {
+    let local = crate::model_manager::local_ffmpeg_path();
+    if local.exists() {
+        return true;
+    }
+
     Command::new("ffmpeg")
         .arg("-version")
         .output()

@@ -30,6 +30,12 @@ pub async fn download_model(app: AppHandle) -> Result<String, String> {
     model_manager::download_model(&app).await
 }
 
+/// Download the FFmpeg binary.
+#[tauri::command]
+pub async fn download_ffmpeg(app: AppHandle) -> Result<String, String> {
+    model_manager::download_ffmpeg(&app).await
+}
+
 /// Check if FFmpeg is available.
 #[tauri::command]
 pub fn check_ffmpeg() -> bool {

@@ -13,6 +13,7 @@ pub fn run() {
             commands::check_model_status,
             commands::download_model,
             commands::check_ffmpeg,
+            commands::download_ffmpeg,
             commands::transcribe_video,
             commands::save_file,
             commands::open_containing_folder,

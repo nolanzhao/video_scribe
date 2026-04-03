@@ -189,3 +189,136 @@ pub async fn download_model(app: &AppHandle) -> Result<String, String> {
 
     Ok(model_path.to_string_lossy().to_string())
 }
+
+/// Get the local FFmpeg binary path.
+pub fn local_ffmpeg_path() -> PathBuf {
+    let data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    data_dir.join("VideoScribe").join("bin").join("ffmpeg")
+}
+
+/// Download the FFmpeg binary from evermeet.cx with progress reporting.
+pub async fn download_ffmpeg(app: &AppHandle) -> Result<String, String> {
+    let ffmpeg_path = local_ffmpeg_path();
+    let bin_dir = ffmpeg_path.parent().unwrap();
+    
+    std::fs::create_dir_all(bin_dir)
+        .map_err(|e| format!("Failed to create bin directory: {e}"))?;
+
+    let _ = app.emit(
+        "download-progress",
+        DownloadProgress {
+            downloaded: 0,
+            total: 0,
+            speed_mbps: 0.0,
+            message: "准备下载 FFmpeg (环境依赖)...".to_string(),
+        },
+    );
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get("https://evermeet.cx/ffmpeg/getrelease/zip")
+        .send()
+        .await
+        .map_err(|e| format!("Download request failed: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Download failed with status: {}", response.status()));
+    }
+
+    let total_size = response.content_length().unwrap_or(0);
+    let zip_path = bin_dir.join("ffmpeg.zip");
+    
+    let mut file = tokio::fs::File::create(&zip_path)
+        .await
+        .map_err(|e| format!("Failed to create zip file: {e}"))?;
+
+    let mut downloaded: u64 = 0;
+    let start_time = std::time::Instant::now();
+    let mut stream = response.bytes_stream();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Download stream error: {e}"))?;
+        tokio::io::AsyncWriteExt::write_all(&mut file, &chunk)
+            .await
+            .map_err(|e| format!("Failed to write chunk: {e}"))?;
+
+        downloaded += chunk.len() as u64;
+
+        let elapsed = start_time.elapsed().as_secs_f64();
+        let speed_mbps = if elapsed > 0.0 {
+            (downloaded as f64 / 1_048_576.0) / elapsed
+        } else {
+            0.0
+        };
+
+        let message = if total_size > 0 {
+            format!(
+                "正在下载 FFmpeg... {:.1}/{:.1} MB ({:.1} MB/s)",
+                downloaded as f64 / 1_048_576.0,
+                total_size as f64 / 1_048_576.0,
+                speed_mbps
+            )
+        } else {
+            format!(
+                "正在下载 FFmpeg... {:.1} MB ({:.1} MB/s)",
+                downloaded as f64 / 1_048_576.0,
+                speed_mbps
+            )
+        };
+
+        let _ = app.emit(
+            "download-progress",
+            DownloadProgress {
+                downloaded,
+                total: total_size,
+                speed_mbps,
+                message,
+            },
+        );
+    }
+
+    tokio::io::AsyncWriteExt::flush(&mut file)
+        .await
+        .map_err(|e| format!("Failed to flush zip file: {e}"))?;
+    drop(file);
+
+    // Extract the zip
+    let _ = app.emit(
+        "download-progress",
+        DownloadProgress {
+            downloaded: total_size,
+            total: total_size,
+            speed_mbps: 0.0,
+            message: "正在解压 FFmpeg...".to_string(),
+        },
+    );
+
+    let status = std::process::Command::new("unzip")
+        .arg("-o")
+        .arg("-j") // flat extraction in case it has folders
+        .arg(&zip_path)
+        .arg("ffmpeg") // only pull out the ffmpeg binary
+        .arg("-d")
+        .arg(bin_dir)
+        .status()
+        .map_err(|e| format!("Failed to execute unzip: {e}"))?;
+
+    if !status.success() {
+        return Err("Failed to extract FFmpeg binary".to_string());
+    }
+
+    // Clean up the zip file
+    let _ = std::fs::remove_file(&zip_path);
+
+    // Set executable permissions
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(mut perms) = std::fs::metadata(&ffmpeg_path).map(|m| m.permissions()) {
+            perms.set_mode(0o755);
+            let _ = std::fs::set_permissions(&ffmpeg_path, perms);
+        }
+    }
+
+    Ok(ffmpeg_path.to_string_lossy().to_string())
+}

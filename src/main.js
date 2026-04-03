@@ -9,12 +9,20 @@ let selectedFilePath = null;
 let transcribeResult = null;
 let isTranscribing = false;
 
+let needFfmpeg = false;
+let needModel = false;
+let downloadingWhat = null; // 'ffmpeg' or 'model'
+
 // ============================================
 // DOM
 // ============================================
 const $ = (id) => document.getElementById(id);
 
 const $modelOverlay = $('model-overlay');
+const $overlayTitle = $('overlay-title');
+const $overlayDesc = $('overlay-desc');
+const $overlayInfo = $('overlay-info');
+const $btnDownloadText = $('btn-download-text');
 const $btnDownload = $('btn-download');
 const $downloadProgressArea = $('download-progress-area');
 const $downloadProgressBar = $('download-progress-bar');
@@ -60,20 +68,55 @@ const ICON = {
 // ============================================
 async function init() {
   initTheme();
-
-  const modelInfo = await invoke('check_model_status');
-  if (!modelInfo.exists) {
-    $modelOverlay.classList.remove('hidden');
-  }
-
-  const ffmpegOk = await invoke('check_ffmpeg');
-  if (!ffmpegOk) {
-    console.warn('FFmpeg not found in system PATH.');
-  }
-
   setupEventListeners();
   setupDragDrop();
   await setupTauriListeners();
+  
+  await checkDependencies();
+}
+
+async function checkDependencies() {
+  const ffmpegOk = await invoke('check_ffmpeg');
+  const modelInfo = await invoke('check_model_status');
+
+  needFfmpeg = !ffmpegOk;
+  needModel = !modelInfo.exists;
+
+  showNextDependencyOverlay();
+}
+
+function showNextDependencyOverlay() {
+  // Reset overlay
+  $downloadProgressArea.classList.add('hidden');
+  $downloadProgressBar.style.width = '0%';
+  $btnDownload.disabled = false;
+
+  if (needFfmpeg) {
+    downloadingWhat = 'ffmpeg';
+    $overlayTitle.textContent = '需要下载环境依赖';
+    $overlayDesc.textContent = '首次使用需下载音视频处理组件 (FFmpeg)';
+    $overlayInfo.innerHTML = `
+      <div class="model-name">FFmpeg (macOS aarch64)</div>
+      <div class="model-size">~30 MB · 用于处理和提取视频音频</div>
+    `;
+    $btnDownloadText.textContent = '下载依赖';
+    $btnDownload.innerHTML = `${ICON.play} <span id="btn-download-text">下载依赖</span>`;
+    $modelOverlay.classList.remove('hidden');
+  } else if (needModel) {
+    downloadingWhat = 'model';
+    $overlayTitle.textContent = '需要下载语音模型';
+    $overlayDesc.textContent = '首次使用需要下载 Whisper 语音识别模型';
+    $overlayInfo.innerHTML = `
+      <div class="model-name">ggml-large-v3-turbo</div>
+      <div class="model-size">~1.5 GB · 支持中英文 · 高精度</div>
+    `;
+    $btnDownloadText.textContent = '下载模型';
+    $btnDownload.innerHTML = `${ICON.play} <span id="btn-download-text">下载模型</span>`;
+    $modelOverlay.classList.remove('hidden');
+  } else {
+    // Both satisfied
+    $modelOverlay.classList.add('hidden');
+  }
 }
 
 // ============================================
@@ -111,22 +154,32 @@ function setTheme(theme) {
 }
 
 // ============================================
-// Model Download
+// Downloads
 // ============================================
-async function handleDownloadModel() {
+async function handleDownload() {
   $btnDownload.disabled = true;
-  $btnDownload.textContent = '下载中...';
+  $btnDownload.innerHTML = `${ICON.loading} <span id="btn-download-text">下载中...</span>`;
   $downloadProgressArea.classList.remove('hidden');
 
   try {
-    await invoke('download_model');
+    if (downloadingWhat === 'ffmpeg') {
+      await invoke('download_ffmpeg');
+      needFfmpeg = false;
+    } else if (downloadingWhat === 'model') {
+      await invoke('download_model');
+      needModel = false;
+    }
+    
     $downloadStatus.textContent = '下载完成';
     $downloadProgressBar.style.width = '100%';
-    setTimeout(() => $modelOverlay.classList.add('hidden'), 800);
+    
+    setTimeout(() => {
+      showNextDependencyOverlay();
+    }, 800);
   } catch (err) {
     $downloadStatus.textContent = `下载失败: ${err}`;
     $btnDownload.disabled = false;
-    $btnDownload.innerHTML = `${ICON.play} 重新下载`;
+    $btnDownload.innerHTML = `${ICON.play} <span id="btn-download-text">重新下载</span>`;
   }
 }
 
@@ -298,7 +351,7 @@ async function copyAll() {
 // Event Listeners
 // ============================================
 function setupEventListeners() {
-  $btnDownload.addEventListener('click', handleDownloadModel);
+  $btnDownload.addEventListener('click', handleDownload);
   $btnSelectFile.addEventListener('click', selectFile);
   $dropZone.addEventListener('click', selectFile);
   $btnChangeFile.addEventListener('click', () => {
