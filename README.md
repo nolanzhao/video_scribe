@@ -61,7 +61,7 @@ npx tauri build --target aarch64-apple-darwin
 ## 技术栈
 
 - **后端**: Rust + [Tauri 2](https://tauri.app) + [whisper-rs](https://github.com/tazz4843/whisper-rs)
-- **前端**: Vanilla JS + CSS（毛玻璃双主题）
+- **前端**: Vanilla JS + CSS
 - **推理**: whisper.cpp（Apple Accelerate 加速）
 
 ## License
