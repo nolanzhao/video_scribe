@@ -21,12 +21,10 @@
 > **遇到了“应用已损坏，无法打开”？**
 > 这是因为 macOS 最新的 Gatekeeper 机制拦截了未经过 Apple 开发者签名的第三方开源应用。
 > **解决方法：**
-> 1. 将应用拖入 `应用程序 (Applications)` 文件夹。
-> 2. 打开终端 (Terminal)，执行以下一键解除隔离命令（注意后面的空格和路径）：
+> 打开终端 (Terminal)，执行以下一键解除隔离命令（注意后面的空格和路径）：
 >    ```bash
 >    sudo xattr -r -d com.apple.quarantine /Applications/VideoScribe.app
 >    ```
-> 3. 输入开机密码后，即可正常打开。
 ### 系统要求
 
 - macOS 14.0+（Apple Silicon M1/M2/M3 等）
